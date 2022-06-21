@@ -20,6 +20,8 @@ jobs:
 
       - name: Run a one-line script
         run: |
+          set -eu
+
           # Clone the repo
           git clone ssh://aur@aur.archlinux.org/aws-cli-v2-bin.git
           cd aws-cli-v2-bin
@@ -27,35 +29,42 @@ jobs:
           VERSION=$(git ls-remote --tags https://github.com/aws/aws-cli | awk '{print $2}' | cut -d/ -f3 | grep -v "\^{}" | sort -V | tail -n1)
 
           # Update version
+          echo "Updating to version ${VERSION}"
           sed -i -e "s/^pkgver=.*$/pkgver=${VERSION}/" PKGBUILD
+          sed -i -e "s/pkgver =.*$/pkgver = ${VERSION}/" .SRCINFO
 
           # Generate integrity
-          fn="awscli-exe-linux-x86_64-${VERSION}.zip"
-          url="https://awscli.amazonaws.com/${fn}"
-          wget -nv "$url"
-          sum=$(sha256sum "$fn" | awk '{print $1}')
-          rm "$fn"
+          for arch in aarch64 x86_64; do
+            echo "Updating integrity for ${arch}"
 
-          # Update integrity
-          sed -i -e "s/^sha256sums=.*$/sha256sums=('${sum}')/" PKGBUILD
+            fn="awscli-exe-linux-${arch}-${VERSION}.zip"
+            url="https://awscli.amazonaws.com/${fn}"
+            wget -nv "$url"
+            sum=$(sha256sum "$fn" | awk '{print $1}')
+            rm "$fn"
 
-          # Update .SRCINFO
-          sed -i -e "s/pkgver =.*$/pkgver = ${VERSION}/" .SRCINFO
-          sed -i -e "s/source =.*$/source = https:\/\/awscli.amazonaws.com\/${fn}/" .SRCINFO
-          sed -i -e "s/sha256sums =.*$/sha256sums = ${sum}/" .SRCINFO
+            sed -i -e "s/^sha256sums_${arch}=.*$/sha256sums_${arch}=('${sum}')/" PKGBUILD
+            sed -i -e "s/sha256sums_${arch} =.*$/sha256sums_${arch} = ${sum}/" .SRCINFO
+            sed -i -e "s/source_${arch} =.*$/source_${arch} = https:\/\/awscli.amazonaws.com\/${fn}/" .SRCINFO
+          done
 
-          ls ~/.ssh/
+          echo "PKGBUILD:"
+          cat PKGBUILD
 
-          # If we have changes...
+          echo ".SRCINFO:"
+          cat .SRCINFO
+
           if [[ -n "$(git diff)" ]]; then
-            # Make the commit
+            echo "We have changes"
             git config --local user.email steve@offend.me.uk
             git config --local user.name "Steve Engledow"
             git add PKGBUILD .SRCINFO
             git commit -m "Update to ${VERSION}"
 
-            # Push to AUR
+            echo "Pushing to AUR"
             git status
             git log -n 10
             git push
+          else
+            echo "No changes"
           fi
